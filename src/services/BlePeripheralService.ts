@@ -1,25 +1,19 @@
 // src/services/BlePeripheralService.ts
-// Mirrors _ble_service.kt — GATT peripheral (server) with advertising
+//
+// Android: delegates entirely to the native ble_service.kt foreground service
+//          via the BleServiceModule native bridge.
+//          Status updates arrive as "BLE_STATUS_UPDATE" events containing the
+//          same message strings that ble_service.kt broadcasts locally.
+//
+// react-native-ble-manager is a *central* (scanner) library and does NOT
+// support peripheral/advertising mode from JS — do not call startAdvertising().
 
 import {
   NativeModules,
   NativeEventEmitter,
   DeviceEventEmitter,
+  Platform,
 } from 'react-native';
-import {
-  getCardData,
-  writeToDisk,
-  fetchFromServer,
-  remainSecond,
-  cardCode,
-} from './CardStore';
-
-const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-const CHAR_UUID = 'ab907856-3412-3412-3412-341278563412';
-
-import BleManager from 'react-native-ble-manager';
-const BleManagerModule = NativeModules.BleManager;
-const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
 export type BleStatus =
   | 'idle'
@@ -35,7 +29,7 @@ const listeners: Array<(status: BleStatus, msg: string) => void> = [];
 
 export function subscribeBleStatus(
   cb: (status: BleStatus, msg: string) => void,
-) {
+): () => void {
   listeners.push(cb);
   return () => {
     const idx = listeners.indexOf(cb);
@@ -50,93 +44,66 @@ function emit(status: BleStatus, msg: string) {
   DeviceEventEmitter.emit('BLE_STATUS', {status, msg});
 }
 
+/** Derive a BleStatus from the Turkish message strings that ble_service.kt sends. */
+function parseStatusFromMsg(msg: string): BleStatus {
+  if (!msg) return 'stopped';
+  if (msg.includes('bağlandı') && !msg.includes('kesti')) return 'connected';
+  if (msg.includes('yayında')) return 'advertising';
+  if (msg.includes('hata') || msg.includes('Hata')) return 'error';
+  return 'stopped';
+}
+
+let _eventSubscribed = false;
+
 export async function startBlePeripheral(): Promise<void> {
-  try {
-    await BleManager.start({showAlert: false});
-    _hookEvents();
-    await _startAdvertising();
-  } catch (e) {
-    console.error('[BLE] startBlePeripheral error', e);
-    emit('error', `BLE başlatılamadı: ${e}`);
+  if (Platform.OS === 'android') {
+    const {BleServiceModule} = NativeModules;
+
+    if (!BleServiceModule) {
+      console.warn(
+        '[BLE] BleServiceModule not found — did you rebuild the native app?',
+      );
+      emit('error', 'BleServiceModule bulunamadı');
+      return;
+    }
+
+    // Subscribe to status broadcasts from ble_service.kt (once only)
+    if (!_eventSubscribed) {
+      _eventSubscribed = true;
+      const emitter = new NativeEventEmitter(BleServiceModule);
+      emitter.addListener('BLE_STATUS_UPDATE', (msg: string) => {
+        const status = parseStatusFromMsg(msg);
+        emit(status, msg);
+      });
+    }
+
+    // Start the native foreground service — it creates the GATT server and
+    // begins advertising automatically once Bluetooth is confirmed on.
+    BleServiceModule.startService();
+    emit('advertising', '');
+  } else {
+    // iOS: CBPeripheralManager is handled by react-native-ble-manager
+    // peripheral APIs or a dedicated peripheral library.
+    // For now, report as unsupported from JS side.
+    console.log(
+      '[BLE] iOS peripheral mode: ensure CBPeripheralManager is configured natively.',
+    );
+    emit('idle', '');
   }
 }
 
 export function stopBlePeripheral(): void {
-  try {
-    BleManager.stopScan();
-    emit('stopped', '');
-  } catch (e) {
-    console.error('[BLE] stop error', e);
+  if (Platform.OS === 'android') {
+    const {BleServiceModule} = NativeModules;
+    BleServiceModule?.stopService();
   }
+  emit('stopped', '');
 }
 
-async function _startAdvertising(): Promise<void> {
-  try {
-    await (BleManager as any).startAdvertising({
-      serviceUUIDs: [SERVICE_UUID],
-      localName: 'AvesBluePass',
-    });
-    emit('advertising', '');
-  } catch (e) {
-    console.error('[BLE] advertising error', e);
-    emit('error', `Advertising hata: ${e}`);
-  }
-}
-
-function _hookEvents() {
-  bleManagerEmitter.addListener('BleManagerConnectPeripheral', () => {
-    emit('connected', 'Okuyucu bağlandı');
-  });
-
-  bleManagerEmitter.addListener('BleManagerDisconnectPeripheral', () => {
-    emit('advertising', 'Okuyucu bağlantıyı kesti');
-  });
-
-  // READ — return first 102 bytes of card data
-  bleManagerEmitter.addListener(
-    'BleManagerDidReceiveCharacteristicReadRequest',
-    async (args: {requestId: string; offset: number}) => {
-      if (remainSecond === 0 && cardCode !== 0) {
-        fetchFromServer().catch(console.error);
-        await (BleManager as any).respondToReadRequest(args.requestId, null);
-        return;
-      }
-
-      const data = await getCardData();
-      const toSend = Array.from(data.slice(0, 102)); // number[] — no Buffer needed
-
-      await (BleManager as any).respondToReadRequest(args.requestId, toSend);
-    },
-  );
-
-  // WRITE — receive 112 bytes
-  bleManagerEmitter.addListener(
-    'BleManagerDidReceiveCharacteristicWriteRequest',
-    async (args: {
-      requestId: string;
-      value: number[];
-      responseNeeded: boolean;
-    }) => {
-      if (args.value.length !== 112) {
-        if (args.responseNeeded)
-          await (BleManager as any).respondToWriteRequest(args.requestId, 0x67);
-        return;
-      }
-
-      // Convert number[] to Uint8Array — no Buffer needed
-      const data = new Uint8Array(args.value);
-      const result = await writeToDisk(data);
-
-      if (args.responseNeeded)
-        await (BleManager as any).respondToWriteRequest(
-          args.requestId,
-          result ? 0x00 : 0x01,
-        );
-    },
-  );
-}
-
-export {SERVICE_UUID, CHAR_UUID};
 export function getBleStatus(): {status: BleStatus; msg: string} {
   return {status: _status, msg: _statusMessage};
 }
+
+// Re-export UUIDs for any consumers that reference them
+export const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+export const CHAR_UUID = 'ab907856-3412-3412-3412-341278563412';

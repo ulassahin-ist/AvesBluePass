@@ -41,7 +41,7 @@ export default function SettingsScreen() {
   const [tcNo, setTcNo] = useState('');
   const [qrLevel, setQrLevel] = useState<(typeof QR_LEVELS)[number]>('L');
 
-  // ── load saved prefs ───────────────────────────────────────────────────────
+  // ── load saved prefs only — no auto-connect ───────────────────────────────
   useEffect(() => {
     (async () => {
       setServerIp((await AsyncStorage.getItem('server_ip')) ?? '192.168.1.10');
@@ -51,9 +51,6 @@ export default function SettingsScreen() {
         ((await AsyncStorage.getItem('qr_quality')) ??
           'L') as (typeof QR_LEVELS)[number],
       );
-
-      // auto-connect on open (mirrors settings_main calling _Connect_To_Server on onCreate)
-      _connectToServer();
     })();
   }, []);
 
