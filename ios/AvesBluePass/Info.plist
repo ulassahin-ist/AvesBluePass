@@ -2,10 +2,51 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- ── App name ── -->
+    <key>CFBundleDisplayName</key>
+    <string>AVES BluePass</string>
+
+    <!-- ── BLE Peripheral background mode ──
+         Required for the app to continue advertising when backgrounded.
+         Without this, iOS stops advertising ~10 seconds after backgrounding. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>bluetooth-peripheral</string>
+        <string>bluetooth-central</string>
+    </array>
+
+    <!-- ── BLE usage descriptions (required by App Store review) ── -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Bu uygulama kart okuyucularla Bluetooth üzerinden iletişim kurmak için BLE kullanır.</string>
+
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Bu uygulama kart verilerini Bluetooth ile paylaşmak için arka planda BLE peripheral olarak çalışır.</string>
+
+    <!-- ── NFC usage description ──
+         iOS supports NFC *reading* (CoreNFC) on iPhone 7+.
+         HCE card emulation is NOT available on iOS.
+         Remove this key if you don't use NFC reading at all. -->
+    <key>NFCReaderUsageDescription</key>
+    <string>Bu uygulama NFC etiketleri okuyabilir.</string>
+
+    <!-- ── Local Network (UDP to server) ── -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Bu uygulama yerel ağdaki sunucuyla iletişim kurmak için ağa erişir.</string>
+
+    <!-- ── Photo library (if photo download is used) ── -->
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Profil fotoğrafınıza erişmek için izin gereklidir.</string>
+
+    <!-- ── Allows HTTP (cleartext) traffic to local server ── -->
+   <key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+</dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
-	<key>CFBundleDisplayName</key>
-	<string>AvesBluePass</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,16 +65,6 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
-		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
