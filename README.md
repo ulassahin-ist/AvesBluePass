@@ -20,15 +20,15 @@ AvesBluePass/
 │   ├── services/
 │   │   ├── CardStore.ts             # carddata.bin I/O, remain-second calc, server fetch
 │   │   ├── UdpClient.ts             # UDP JSON send/receive (mirrors Kotlin UdpClient)
-│   │   └── BlePeripheralService.ts  # GATT peripheral/advertise (mirrors _ble_service.kt)
+│   │   └── BlePeripheralService.ts  # GATT peripheral/advertise (mirrors ble_service.kt)
 │   └── utils/
 │       └── NfcHelper.ts             # NFC enabled check (cross-platform)
 ├── android/
 │   └── app/src/main/
 │       ├── AndroidManifest.xml      # Merge into generated RN manifest
 │       └── java/com/avesbluepass/
-│           ├── _hce_nfc_service.kt  # ← COPY FROM ORIGINAL (unchanged)
-│           ├── _ble_service.kt      # ← COPY FROM ORIGINAL (unchanged)
+│           ├── hce_nfc_service.kt  # ← COPY FROM ORIGINAL (unchanged)
+│           ├── ble_service.kt      # ← COPY FROM ORIGINAL (unchanged)
 │           ├── ble_state_receiver.kt# ← COPY FROM ORIGINAL (unchanged)
 │           └── utils.kt             # ← COPY FROM ORIGINAL (unchanged)
 └── ios/
@@ -92,12 +92,12 @@ cd ios && pod install && cd ..
 Copy the following files from the original Android project **unchanged** into:
 `android/app/src/main/java/com/avesbluepass/`
 
-| Original file              | Copy as                    |
-|---------------------------|----------------------------|
-| `_hce_nfc_service.kt`     | `hce_nfc_service.kt`       |
-| `_ble_service.kt`         | `ble_service.kt`           |
-| `ble_state_receiver.kt`   | `ble_state_receiver.kt`    |
-| `utils.kt`                | `utils.kt`                 |
+| Original file           | Copy as                 |
+| ----------------------- | ----------------------- |
+| `hce_nfc_service.kt`    | `hce_nfc_service.kt`    |
+| `ble_service.kt`        | `ble_service.kt`        |
+| `ble_state_receiver.kt` | `ble_state_receiver.kt` |
+| `utils.kt`              | `utils.kt`              |
 
 Also copy `app/src/main/res/xml/apduservice.xml` to `android/app/src/main/res/xml/apduservice.xml`.
 
@@ -131,9 +131,11 @@ In `MainApplication.kt` (auto-generated), the BleManager package is auto-linked 
 ## 5. iOS BLE peripheral setup
 
 ### Info.plist
+
 Merge all keys from `ios/InfoPlist_additions.plist` into your `ios/AvesBluePass/Info.plist`.
 
 The critical keys are:
+
 ```xml
 <key>UIBackgroundModes</key>
 <array>
@@ -145,10 +147,12 @@ The critical keys are:
 Without these, iOS stops BLE advertising ~10 seconds after the app backgrounds.
 
 ### Xcode capability
+
 In Xcode → Target → Signing & Capabilities → add **Background Modes** →
 check **Uses Bluetooth LE accessories** and **Acts as a Bluetooth LE accessory**.
 
 ### iOS BLE peripheral limitations
+
 - iOS allows GATT peripheral role (CBPeripheralManager) ✅
 - iOS allows advertising in background when `bluetooth-peripheral` mode is set ✅
 - iOS may throttle advertising in extreme low-power states ⚠️
@@ -161,10 +165,12 @@ check **Uses Bluetooth LE accessories** and **Acts as a Bluetooth LE accessory**
 The app uses `react-native-permissions`. On first launch, it will request:
 
 **Android:**
+
 - `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `BLUETOOTH_ADVERTISE` (API 31+)
 - `ACCESS_FINE_LOCATION` (API < 31)
 
 **iOS:**
+
 - Bluetooth (NSBluetoothAlwaysUsageDescription from Info.plist)
 - Local Network (for UDP to server)
 
@@ -211,7 +217,7 @@ iOS **does not support HCE** (card emulation). The NFC status card on the main s
 show hardware availability (iPhone 7+ has NFC hardware). The actual card emulation on iOS
 is simply not possible — the QR code and BLE paths are the alternatives.
 
-The Android HCE service (`_hce_nfc_service.kt`) is kept **100% native** and is unchanged.
+The Android HCE service (`hce_nfc_service.kt`) is kept **100% native** and is unchanged.
 
 ---
 
@@ -226,6 +232,7 @@ npx react-native run-ios
 ```
 
 For a release APK:
+
 ```bash
 cd android && ./gradlew assembleRelease
 ```
@@ -234,15 +241,15 @@ cd android && ./gradlew assembleRelease
 
 ## Feature comparison
 
-| Feature                   | Android (RN) | iOS (RN) |
-|--------------------------|:------------:|:--------:|
-| QR code display          | ✅           | ✅       |
-| Countdown timer          | ✅           | ✅       |
-| Server fetch (UDP)       | ✅           | ✅       |
-| Photo + full name        | ✅           | ✅       |
-| Settings / account       | ✅           | ✅       |
-| BLE GATT peripheral      | ✅           | ✅*      |
-| BLE background advertise | ✅           | ✅*      |
-| NFC HCE (card emulation) | ✅           | ❌       |
+| Feature                  | Android (RN) | iOS (RN) |
+| ------------------------ | :----------: | :------: |
+| QR code display          |      ✅      |    ✅    |
+| Countdown timer          |      ✅      |    ✅    |
+| Server fetch (UDP)       |      ✅      |    ✅    |
+| Photo + full name        |      ✅      |    ✅    |
+| Settings / account       |      ✅      |    ✅    |
+| BLE GATT peripheral      |      ✅      |   ✅\*   |
+| BLE background advertise |      ✅      |   ✅\*   |
+| NFC HCE (card emulation) |      ✅      |    ❌    |
 
-*iOS BLE peripheral works but Apple may throttle in background under battery pressure.
+\*iOS BLE peripheral works but Apple may throttle in background under battery pressure.

@@ -71,3 +71,4 @@ coverage/
 .idea/
 *.swp
 *.swo
+package-lock.json

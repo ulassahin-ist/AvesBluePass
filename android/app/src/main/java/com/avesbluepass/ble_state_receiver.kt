@@ -1,4 +1,4 @@
-package com.aves.hce
+package com.avesbluepass
 
 import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
@@ -19,7 +19,7 @@ class ble_state_receiver : BroadcastReceiver()
                 BluetoothAdapter.ERROR
             )
 
-            val serviceIntent = Intent(context, _ble_service::class.java)
+            val serviceIntent = Intent(context, ble_service::class.java)
 
             when (state)
             {

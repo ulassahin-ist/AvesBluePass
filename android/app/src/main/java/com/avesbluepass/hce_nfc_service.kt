@@ -1,4 +1,4 @@
-package com.aves.hce
+package com.avesbluepass
 
 import android.nfc.cardemulation.HostApduService
 import android.os.Bundle
@@ -9,7 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
 
-class _hce_nfc_service : HostApduService()
+class hce_nfc_service : HostApduService()
 {
     /* ---- RAM BUFFER (ATOMIC WRITE İÇİN) ---- */
     private var TempBuffer = ByteArray(112)
@@ -80,7 +80,7 @@ class _hce_nfc_service : HostApduService()
             if ((Util.RemainSecond == 0u) && (Util.CardCode != 0) ) // ilk kurulumda kesmesin
             {
                 Log.d("CARD_STATE", "Expire validity second")
-                Util.__GET_FROM_SERVER(this@_hce_nfc_service, serviceScope)
+                Util.__GET_FROM_SERVER(this@hce_nfc_service, serviceScope)
                 return byteArrayOf( 0x6B.toByte(), 0x00.toByte() );
             }
 

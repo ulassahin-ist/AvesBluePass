@@ -1,4 +1,4 @@
-package com.aves.hce
+package com.avesbluepass
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers

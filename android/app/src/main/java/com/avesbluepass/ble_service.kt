@@ -1,4 +1,4 @@
-package com.aves.hce
+package com.avesbluepass
 
 import android.app.*
 import android.bluetooth.*
@@ -12,7 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import java.util.*
 import kotlinx.coroutines.*
 
-class _ble_service : Service()
+class ble_service : Service()
 {
     //---------------------------------------------------------------------------
     companion object {
@@ -300,13 +300,13 @@ class _ble_service : Service()
             {
                 Log.d("CARD_STATE", "BLE read")
 
-                val apduData = Util._Get_Card_Data(this@_ble_service)
+                val apduData = Util._Get_Card_Data(this@ble_service)
 
                 if (Util.RemainSecond == 0u)
                 {
                     Log.d("CARD_STATE", "BLE read request. Expire validy")
 
-                    Util.__GET_FROM_SERVER(this@_ble_service, serviceScope)
+                    Util.__GET_FROM_SERVER(this@ble_service, serviceScope)
 
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset,null)
                     return
@@ -337,7 +337,7 @@ class _ble_service : Service()
                     return
                 }
 
-                val writeResult = Util._Write_To_Disk(this@_ble_service, value)
+                val writeResult = Util._Write_To_Disk(this@ble_service, value)
 
                 if (responseNeeded) gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, byteArrayOf(writeResult))
             }

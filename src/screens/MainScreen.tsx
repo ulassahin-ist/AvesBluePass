@@ -1,140 +1,155 @@
 // src/screens/MainScreen.tsx
-// Mirrors main_activity.kt — QR display, countdown, NFC/BLE status cards, photo, renew
+// UI mirrors main_activity.kt exactly
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, {useEffect, useRef, useState, useCallback} from 'react';
 import {
-  View, Text, Image, TouchableOpacity, StyleSheet,
-  DeviceEventEmitter, Platform, AppState, Alert,
-  ScrollView, ActivityIndicator,
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  DeviceEventEmitter,
+  AppState,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  getCardData, fetchFromServer, calcRemainSecond,
-  cardCode, remainSecond, updateInProgress,
-} from '../services/CardStore';
-import { subscribeBleStatus, getBleStatus, startBlePeripheral } from '../services/BlePeripheralService';
-import { checkNfcEnabled } from '../utils/NfcHelper';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/AppNavigator';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {RootStackParamList} from '../navigation/AppNavigator';
 
-const CARD_ACCENT = '#1e55a8';
-const GREEN       = '#2E7D32';
-const RED         = '#C62828';
-const GRAY        = '#707070';
+import {
+  getCardData,
+  fetchFromServer,
+  calcRemainSecond,
+  updateInProgress,
+} from '../services/CardStore';
+import {
+  subscribeBleStatus,
+  getBleStatus,
+  startBlePeripheral,
+} from '../services/BlePeripheralService';
+import {checkNfcEnabled} from '../utils/NfcHelper';
+
+const GREEN = '#2E7D32';
+const RED = '#C62828';
+const GRAY = '#757575';
+const BLUE = '#1565C0';
 
 export default function MainScreen() {
-  const insets     = useSafeAreaInsets();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  const [qrPayload,    setQrPayload]    = useState<string | null>(null);
-  const [cardCodeStr,  setCardCodeStr]  = useState('');
-  const [countdown,    setCountdown]    = useState<number | null>(null);
-  const [photoUri,     setPhotoUri]     = useState<string | null>(null);
-  const [fullName,     setFullName]     = useState('');
-  const [nfcOn,        setNfcOn]        = useState(false);
-  const [bleOn,        setBleOn]        = useState(false);
-  const [bleMsg,       setBleMsg]       = useState('');
-  const [renewing,     setRenewing]     = useState(false);
+  // ── state ──────────────────────────────────────────────────────────────────
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
+  const [cardCodeVal, setCardCodeVal] = useState(0); // local reactive copy
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [fullName, setFullName] = useState('');
+  const [nfcOn, setNfcOn] = useState(false);
+  const [bleOn, setBleOn] = useState(false);
+  const [bleMsg, setBleMsg] = useState('');
+  const [renewing, setRenewing] = useState(false);
 
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ─── Lifecycle ────────────────────────────────────────────────────────────
-
+  // ── lifecycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
     _startup();
 
     const cardSub = DeviceEventEmitter.addListener('CARD_UPDATED', _updateQr);
-    const renewSub = DeviceEventEmitter.addListener('RENEW_CHANGED', ({ enabled }) => {
-      setRenewing(!enabled);
+    const renewSub = DeviceEventEmitter.addListener(
+      'RENEW_CHANGED',
+      ({enabled}) => setRenewing(!enabled),
+    );
+    const bleSub = subscribeBleStatus((_status, msg) => {
+      const on = _status === 'advertising' || _status === 'connected';
+      setBleOn(on);
+      setBleMsg(msg);
     });
-    const bleSub = subscribeBleStatus((status, msg) => {
-      const label = status === 'advertising' ? 'BLE yayında' : status === 'connected' ? 'BLE yayında' : '';
-      setBleMsg(msg ? `${label}${msg ? ', ' + msg : ''}` : label);
-    });
-    const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') _refreshStatuses();
+    const appSub = AppState.addEventListener('change', s => {
+      if (s === 'active') _refreshStatuses();
     });
 
     return () => {
       cardSub.remove();
       renewSub.remove();
       bleSub();
-      appStateSub.remove();
-      if (countdownRef.current) clearInterval(countdownRef.current);
+      appSub.remove();
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
-
-  // ─── Startup ──────────────────────────────────────────────────────────────
 
   async function _startup() {
     await getCardData();
     await _loadUserInfo();
-    await _refreshStatuses();
+    _refreshStatuses();
     _updateQr();
-    _startBle();
-  }
-
-  async function _startBle() {
-    try { await startBlePeripheral(); } catch { /* permissions may be missing */ }
+    try {
+      await startBlePeripheral();
+    } catch {
+      /* permissions pending */
+    }
   }
 
   async function _refreshStatuses() {
-    // NFC
-    const nfc = await checkNfcEnabled();
-    setNfcOn(nfc);
-
-    // BLE — react-native-ble-manager
-    const { status } = getBleStatus();
-    const bleEnabled  = status !== 'stopped' && status !== 'error' && status !== 'idle';
-    setBleOn(bleEnabled);
+    setNfcOn(await checkNfcEnabled());
+    const {status} = getBleStatus();
+    setBleOn(status === 'advertising' || status === 'connected');
   }
 
   async function _loadUserInfo() {
     const name = (await AsyncStorage.getItem('fullName')) ?? '';
     setFullName(name);
 
-    const dir   = await RNFS.readDir(RNFS.DocumentDirectoryPath);
+    const dir = await RNFS.readDir(RNFS.DocumentDirectoryPath);
     const photo = dir.find(f => f.name.startsWith('photo.'));
-    if (photo) setPhotoUri(`file://${photo.path}`);
-    else        setPhotoUri(null);
+    setPhotoUri(photo ? `file://${photo.path}` : null);
   }
 
-  // ─── QR refresh ───────────────────────────────────────────────────────────
-
+  // ── QR update ──────────────────────────────────────────────────────────────
   const _updateQr = useCallback(async () => {
     const data = await getCardData();
 
-    if (cardCode === 0) {
+    // Read cardCode directly from the data bytes (same as Kotlin _Remain_Second)
+    const cc =
+      (data[0] & 0xff) |
+      ((data[1] & 0xff) << 8) |
+      ((data[2] & 0xff) << 16) |
+      ((data[3] & 0xff) << 24);
+
+    setCardCodeVal(cc);
+
+    if (cc === 0) {
       setQrPayload(null);
-      setCardCodeStr('');
       setCountdown(null);
       return;
     }
 
     // First 102 bytes as ISO-8859-1 string for QR
-    const slice = data.slice(0, 102);
-    // Convert binary buffer to ISO-8859-1 safe string using char codes
-    const chars = Array.from(slice).map(b => String.fromCharCode(b)).join('');
-    setQrPayload(chars);
-    setCardCodeStr(String(cardCode));
+    const slice = Array.from(data.slice(0, 102))
+      .map(b => String.fromCharCode(b))
+      .join('');
+    setQrPayload(slice);
     _startCountdown();
   }, []);
 
   function _startCountdown() {
-    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
 
     const remain = calcRemainSecond();
 
     if (remain === 0xffffffff) {
-      // Permanent card — no countdown
       setCountdown(null);
       return;
     }
-
     if (remain <= 0) {
       setCountdown(0);
       setQrPayload(null);
@@ -142,22 +157,20 @@ export default function MainScreen() {
     }
 
     setCountdown(remain);
-
-    countdownRef.current = setInterval(() => {
+    timerRef.current = setInterval(() => {
       const r = calcRemainSecond();
       if (r <= 0) {
-        clearInterval(countdownRef.current!);
+        clearInterval(timerRef.current!);
         setCountdown(0);
         setQrPayload(null);
-        setCardCodeStr('');
+        setCardCodeVal(0);
       } else {
         setCountdown(r);
       }
     }, 1000);
   }
 
-  // ─── Renew button ─────────────────────────────────────────────────────────
-
+  // ── renew ──────────────────────────────────────────────────────────────────
   async function _onRenew() {
     if (updateInProgress || renewing) return;
     setRenewing(true);
@@ -167,179 +180,226 @@ export default function MainScreen() {
     setRenewing(false);
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── system settings taps ───────────────────────────────────────────────────
+  function _onNfcCard() {
+    if (Platform.OS === 'android')
+      Linking.sendIntent('android.settings.NFC_SETTINGS').catch(() => {});
+  }
+  function _onBleCard() {
+    if (Platform.OS === 'android')
+      Linking.sendIntent('android.settings.BLUETOOTH_SETTINGS').catch(() => {});
+  }
 
+  // ── render ─────────────────────────────────────────────────────────────────
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Logo placeholder */}
-      <View style={styles.logoRow}>
-        <Text style={styles.logoText}>AVES BluePass</Text>
+      contentContainerStyle={[
+        styles.content,
+        {paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24},
+      ]}
+      showsVerticalScrollIndicator={false}>
+      {/* ── Top bar ── */}
+      <View style={styles.topBar}>
+        <Text style={styles.appTitle}>AVES BluePass</Text>
+        <TouchableOpacity
+          style={styles.settingsIconBtn}
+          onPress={() => navigation.navigate('Settings')}>
+          <Text style={styles.settingsIcon}>⚙</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Full name */}
-      {fullName ? <Text style={styles.fullName}>{fullName}</Text> : null}
-
-      {/* NFC + BLE + Photo row */}
+      {/* ── Status row: NFC | BLE | Photo ── */}
       <View style={styles.statusRow}>
-        {/* Left: NFC & BLE cards */}
-        <View style={styles.statusLeft}>
-          {/* NFC card */}
-          <View style={styles.statusCard}>
-            <View style={styles.statusCardInner}>
-              <Text style={[styles.statusDot, { color: nfcOn ? GREEN : RED }]}>●</Text>
-              <Text style={[styles.statusLabel, { color: nfcOn ? GREEN : RED }]}>
+        <View style={styles.statusCol}>
+          <TouchableOpacity
+            style={styles.statusCard}
+            onPress={_onNfcCard}
+            activeOpacity={0.7}>
+            <View style={styles.statusCardRow}>
+              <View
+                style={[styles.dot, {backgroundColor: nfcOn ? GREEN : RED}]}
+              />
+              <Text style={[styles.statusLabel, {color: nfcOn ? GREEN : RED}]}>
                 NFC : {nfcOn ? 'ON' : 'OFF'}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
-          {/* BLE card */}
-          <View style={[styles.statusCard, { marginTop: 10 }]}>
-            <View style={styles.statusCardInner}>
-              <Text style={[styles.statusDot, { color: bleOn ? GREEN : RED }]}>●</Text>
-              <Text style={[styles.statusLabel, { color: bleOn ? GREEN : RED }]}>
+          <TouchableOpacity
+            style={[styles.statusCard, {marginTop: 8}]}
+            onPress={_onBleCard}
+            activeOpacity={0.7}>
+            <View style={styles.statusCardRow}>
+              <View
+                style={[styles.dot, {backgroundColor: bleOn ? GREEN : RED}]}
+              />
+              <Text style={[styles.statusLabel, {color: bleOn ? GREEN : RED}]}>
                 BLE : {bleOn ? 'ON' : 'OFF'}
               </Text>
             </View>
-            {bleMsg ? <Text style={styles.bleMsg}>{bleMsg}</Text> : null}
-          </View>
+            {bleMsg ? (
+              <Text style={styles.bleSubText} numberOfLines={2}>
+                {bleMsg}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
         </View>
 
-        {/* Right: Photo */}
-        <View style={styles.photoContainer}>
+        <View style={styles.photoWrap}>
           {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.photo} />
+            <Image
+              source={{uri: photoUri}}
+              style={styles.photo}
+              resizeMode="cover"
+            />
           ) : (
             <View style={[styles.photo, styles.photoPlaceholder]}>
-              <Text style={styles.photoPlaceholderText}>👤</Text>
+              <Text style={styles.photoPlaceholderIcon}>👤</Text>
             </View>
           )}
         </View>
       </View>
 
-      {/* QR Code area */}
-      <View style={styles.qrContainer}>
+      {/* ── Full name ── */}
+      {fullName ? <Text style={styles.fullName}>{fullName}</Text> : null}
+
+      {/* ── QR code ── */}
+      <View style={styles.qrWrap}>
         {qrPayload ? (
-          <>
-            <QRCode
-              value={qrPayload}
-              size={280}
-              color="black"
-              backgroundColor="white"
-              ecl="L"
-            />
-            <View style={styles.qrFooter}>
-              <Text style={styles.cardCodeText}>{cardCodeStr}</Text>
-              {countdown !== null && countdown < 0xffffffff ? (
-                <Text style={styles.countdownText}>{countdown}</Text>
-              ) : null}
-            </View>
-          </>
+          <QRCode
+            value={qrPayload}
+            size={270}
+            color="black"
+            backgroundColor="white"
+            ecl="L"
+          />
         ) : (
           <View style={styles.qrPlaceholder}>
             <Text style={styles.qrPlaceholderText}>
-              {cardCode === 0 ? 'Kart verisi bulunamadı' : 'QR süresi doldu'}
+              {cardCodeVal === 0 ? 'Kart verisi bulunamadı' : 'QR süresi doldu'}
             </Text>
           </View>
         )}
       </View>
 
-      {/* Bottom buttons */}
-      <View style={styles.bottomRow}>
+      {/* ── Card code + countdown ── */}
+      {cardCodeVal !== 0 && (
+        <View style={styles.codeRow}>
+          <Text style={styles.cardCodeText}>{cardCodeVal}</Text>
+          {countdown !== null && countdown < 0xffffffff ? (
+            <Text style={styles.countdownText}>{countdown}</Text>
+          ) : null}
+        </View>
+      )}
+
+      {/* ── Renew button ── */}
+      {cardCodeVal !== 0 && (
         <TouchableOpacity
           style={[styles.renewBtn, renewing && styles.renewBtnDisabled]}
           onPress={_onRenew}
-          disabled={renewing}
-        >
-          {renewing
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.renewBtnText}>Sunucudan güncelle</Text>
-          }
+          disabled={renewing}>
+          {renewing ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.renewBtnText}>Sunucudan güncelle</Text>
+          )}
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Text style={styles.settingsBtnText}>⚙</Text>
-        </TouchableOpacity>
-      </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
-  content: { alignItems: 'center', paddingHorizontal: 8 },
+  root: {flex: 1, backgroundColor: '#fff'},
+  content: {alignItems: 'center', paddingHorizontal: 12},
 
-  logoRow: { width: '100%', height: 60, justifyContent: 'center', alignItems: 'center' },
-  logoText: { fontSize: 22, fontWeight: 'bold', color: CARD_ACCENT },
+  topBar: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  appTitle: {fontSize: 20, fontWeight: 'bold', color: BLUE},
+  settingsIconBtn: {padding: 6},
+  settingsIcon: {fontSize: 26, color: GRAY},
 
-  fullName: { fontSize: 18, fontWeight: 'bold', marginTop: 4, textAlign: 'center' },
-
-  statusRow: { flexDirection: 'row', width: '100%', marginTop: 8 },
-  statusLeft: { flex: 1, paddingRight: 8 },
+  statusRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  statusCol: {flex: 1, marginRight: 10},
 
   statusCard: {
-    backgroundColor: '#F5F5F5', borderRadius: 14, padding: 8,
-    marginStart: 8, marginEnd: 4,
-  },
-  statusCardInner: { flexDirection: 'row', alignItems: 'center' },
-  statusDot:   { fontSize: 18, marginRight: 6 },
-  statusLabel: { fontSize: 17, fontWeight: 'bold' },
-  bleMsg:      { fontSize: 10, color: GRAY, marginTop: 2, marginStart: 4 },
-
-  photoContainer: {
-    width: 110, height: 135,
-    marginEnd: 14, marginStart: 6,
-    borderRadius: 14, overflow: 'hidden',
     backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 10,
   },
-  photo: { width: '100%', height: '100%' },
-  photoPlaceholder: { justifyContent: 'center', alignItems: 'center' },
-  photoPlaceholderText: { fontSize: 48 },
+  statusCardRow: {flexDirection: 'row', alignItems: 'center'},
+  dot: {width: 10, height: 10, borderRadius: 5, marginRight: 8},
+  statusLabel: {fontSize: 16, fontWeight: 'bold'},
+  bleSubText: {fontSize: 11, color: GRAY, marginTop: 4},
 
-  qrContainer: {
-    marginTop: 16, width: 300, minHeight: 320,
-    alignItems: 'center', justifyContent: 'center',
+  photoWrap: {
+    width: 100,
+    height: 130,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F0F0F0',
   },
-  qrFooter: {
-    flexDirection: 'row', width: '100%',
-    justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 8, paddingHorizontal: 4,
-  },
-  cardCodeText:  { color: '#cccccc', fontSize: 16, fontWeight: 'bold' },
-  countdownText: { color: GRAY, fontSize: 24, fontWeight: 'bold' },
+  photo: {width: '100%', height: '100%'},
+  photoPlaceholder: {justifyContent: 'center', alignItems: 'center'},
+  photoPlaceholderIcon: {fontSize: 52},
 
+  fullName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#222',
+    marginTop: 10,
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+
+  qrWrap: {
+    marginTop: 14,
+    width: 270,
+    height: 270,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   qrPlaceholder: {
-    width: 280, height: 280,
-    backgroundColor: '#F5F5F5', borderRadius: 12,
-    justifyContent: 'center', alignItems: 'center',
+    width: 270,
+    height: 270,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  qrPlaceholderText: { color: GRAY, fontSize: 14, textAlign: 'center', padding: 16 },
+  qrPlaceholderText: {color: GRAY, fontSize: 14, textAlign: 'center'},
 
-  bottomRow: {
-    flexDirection: 'row', width: '100%',
-    justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 24, paddingHorizontal: 16,
+  codeRow: {
+    width: 270,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 2,
   },
+  cardCodeText: {color: '#BDBDBD', fontSize: 15, fontWeight: 'bold'},
+  countdownText: {color: GRAY, fontSize: 22, fontWeight: 'bold'},
+
   renewBtn: {
-    backgroundColor: CARD_ACCENT, borderRadius: 15,
-    paddingHorizontal: 20, paddingVertical: 12,
+    marginTop: 20,
+    backgroundColor: BLUE,
+    borderRadius: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 13,
+    alignItems: 'center',
   },
-  renewBtnDisabled: { opacity: 0.6 },
-  renewBtnText:     { color: '#fff', fontSize: 14 },
-
-  settingsBtn: {
-    width: 50, height: 50, borderRadius: 25,
-    backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#ddd',
-    justifyContent: 'center', alignItems: 'center',
-    elevation: 2,
-  },
-  settingsBtnText: { fontSize: 24, color: CARD_ACCENT },
+  renewBtnDisabled: {opacity: 0.55},
+  renewBtnText: {color: '#fff', fontSize: 15, fontWeight: '600'},
 });
