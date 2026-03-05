@@ -23,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../navigation/AppNavigator';
-
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
   getCardData,
   fetchFromServer,
@@ -205,7 +205,7 @@ export default function MainScreen() {
         <TouchableOpacity
           style={styles.settingsIconBtn}
           onPress={() => navigation.navigate('Settings')}>
-          <Text style={styles.settingsIcon}>⚙</Text>
+          <Icon name="cog" size={28} color={GRAY} />
         </TouchableOpacity>
       </View>
 
@@ -217,11 +217,14 @@ export default function MainScreen() {
             onPress={_onNfcCard}
             activeOpacity={0.7}>
             <View style={styles.statusCardRow}>
-              <View
-                style={[styles.dot, {backgroundColor: nfcOn ? GREEN : RED}]}
+              <Icon
+                name="nfc"
+                size={22}
+                color={nfcOn ? GREEN : RED}
+                style={{marginRight: 8}}
               />
               <Text style={[styles.statusLabel, {color: nfcOn ? GREEN : RED}]}>
-                NFC : {nfcOn ? 'ON' : 'OFF'}
+                NFC {nfcOn ? 'ON' : 'OFF'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -231,8 +234,11 @@ export default function MainScreen() {
             onPress={_onBleCard}
             activeOpacity={0.7}>
             <View style={styles.statusCardRow}>
-              <View
-                style={[styles.dot, {backgroundColor: bleOn ? GREEN : RED}]}
+              <Icon
+                name="bluetooth"
+                size={22}
+                color={bleOn ? GREEN : RED}
+                style={{marginRight: 8}}
               />
               <Text style={[styles.statusLabel, {color: bleOn ? GREEN : RED}]}>
                 BLE : {bleOn ? 'ON' : 'OFF'}
@@ -311,95 +317,204 @@ export default function MainScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: '#fff'},
-  content: {alignItems: 'center', paddingHorizontal: 12},
+  root: {
+    flex: 1,
+    backgroundColor: '#F6F8FB',
+  },
+
+  content: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
 
   topBar: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 18,
   },
-  appTitle: {fontSize: 20, fontWeight: 'bold', color: BLUE},
-  settingsIconBtn: {padding: 6},
-  settingsIcon: {fontSize: 26, color: GRAY},
+
+  appTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: BLUE,
+    letterSpacing: 0.3,
+  },
+
+  settingsIconBtn: {
+    padding: 8,
+    borderRadius: 10,
+    // backgroundColor: '#EEF3FF',
+  },
+
+  settingsIcon: {
+    fontSize: 22,
+    color: BLUE,
+  },
 
   statusRow: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  statusCol: {flex: 1, marginRight: 10},
+
+  statusCol: {
+    flex: 1,
+    marginRight: 10,
+  },
 
   statusCard: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 3,
   },
-  statusCardRow: {flexDirection: 'row', alignItems: 'center'},
-  dot: {width: 10, height: 10, borderRadius: 5, marginRight: 8},
-  statusLabel: {fontSize: 16, fontWeight: 'bold'},
-  bleSubText: {fontSize: 11, color: GRAY, marginTop: 4},
+
+  statusCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  dot: {
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  bleSubText: {
+    fontSize: 12,
+    color: GRAY,
+    marginTop: 6,
+    opacity: 0.8,
+  },
 
   photoWrap: {
     width: 100,
     height: 130,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#EDEFF3',
+
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 4,
   },
-  photo: {width: '100%', height: '100%'},
-  photoPlaceholder: {justifyContent: 'center', alignItems: 'center'},
-  photoPlaceholderIcon: {fontSize: 52},
+
+  photo: {
+    width: '100%',
+    height: '100%',
+  },
+
+  photoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  photoPlaceholderIcon: {
+    fontSize: 48,
+    opacity: 0.6,
+  },
 
   fullName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#222',
-    marginTop: 10,
-    marginBottom: 2,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginTop: 12,
+    marginBottom: 4,
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
 
   qrWrap: {
-    marginTop: 14,
+    marginTop: 18,
     width: 270,
     height: 270,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: {width: 0, height: 6},
+    elevation: 6,
   },
+
   qrPlaceholder: {
     width: 270,
     height: 270,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
+    backgroundColor: '#F1F3F6',
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  qrPlaceholderText: {color: GRAY, fontSize: 14, textAlign: 'center'},
+
+  qrPlaceholderText: {
+    color: GRAY,
+    fontSize: 14,
+    textAlign: 'center',
+  },
 
   codeRow: {
     width: 270,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 2,
+    marginTop: 10,
+    paddingHorizontal: 4,
   },
-  cardCodeText: {color: '#BDBDBD', fontSize: 15, fontWeight: 'bold'},
-  countdownText: {color: GRAY, fontSize: 22, fontWeight: 'bold'},
+
+  cardCodeText: {
+    color: '#A0A4AA',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  countdownText: {
+    color: '#444',
+    fontSize: 22,
+    fontWeight: '700',
+  },
 
   renewBtn: {
-    marginTop: 20,
+    marginTop: 22,
     backgroundColor: BLUE,
-    borderRadius: 12,
-    paddingHorizontal: 32,
-    paddingVertical: 13,
-    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 36,
+    paddingVertical: 14,
+
+    shadowColor: BLUE,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 4,
   },
-  renewBtnDisabled: {opacity: 0.55},
-  renewBtnText: {color: '#fff', fontSize: 15, fontWeight: '600'},
+
+  renewBtnDisabled: {
+    opacity: 0.55,
+  },
+
+  renewBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
 });

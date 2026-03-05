@@ -27,7 +27,13 @@ class BleServiceModule(private val reactContext: ReactApplicationContext) :
 
     init {
         val filter = IntentFilter("LOCAL_BLE_STATUS_UPDATE")
-        reactContext.registerReceiver(statusReceiver, filter)
+        // Android 14+ (API 34) requires explicit exported/not-exported flag.
+        // This receiver only handles our own local broadcasts so NOT_EXPORTED is correct.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            reactContext.registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            reactContext.registerReceiver(statusReceiver, filter)
+        }
     }
 
     // Required boilerplate for NativeEventEmitter on the JS side
