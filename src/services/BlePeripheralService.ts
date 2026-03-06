@@ -80,7 +80,7 @@ export async function startBlePeripheral(): Promise<void> {
     // Start the native foreground service — it creates the GATT server and
     // begins advertising automatically once Bluetooth is confirmed on.
     BleServiceModule.startService();
-    emit('advertising', '');
+    // Don't emit here — real status comes from BLE_STATUS_UPDATE events from ble_service.kt
   } else {
     // iOS: CBPeripheralManager is handled by react-native-ble-manager
     // peripheral APIs or a dedicated peripheral library.

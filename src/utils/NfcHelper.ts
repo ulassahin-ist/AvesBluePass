@@ -11,21 +11,16 @@ import {Platform, NativeModules} from 'react-native';
 export async function checkNfcEnabled(): Promise<boolean> {
   try {
     if (Platform.OS === 'android') {
-      // react-native-nfc-manager or a simple native check
-      // Using NativeModules fallback — install react-native-nfc-manager for full support
-      const NfcManager = NativeModules.NfcManager;
-      if (NfcManager && typeof NfcManager.isEnabled === 'function') {
-        return await NfcManager.isEnabled();
+      // Use our native NfcStatusModule (see NfcStatusModule.kt)
+      const {NfcStatusModule} = NativeModules;
+      if (
+        NfcStatusModule &&
+        typeof NfcStatusModule.isNfcEnabled === 'function'
+      ) {
+        return await NfcStatusModule.isNfcEnabled();
       }
       return false;
     } else {
-      // iOS: NFCReaderSession.readingAvailable (hardware availability, not a toggle)
-      // There's no "NFC settings" on iOS — the chip is always on if supported.
-      // We return true if the device supports NFC (iPhone 7+).
-      const NfcManager = NativeModules.NfcManager;
-      if (NfcManager && typeof NfcManager.isSupported === 'function') {
-        return await NfcManager.isSupported();
-      }
       return false;
     }
   } catch {

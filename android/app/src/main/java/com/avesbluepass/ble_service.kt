@@ -107,39 +107,48 @@ class ble_service : Service()
                         __SendBleStatusMessage("") //Bluetooth Kapalı
                     }
 
-                    BluetoothAdapter.STATE_ON -> {
-                        Log.d(TAG, "Bluetooth ON -> GATT yeniden kuruluyor")
-                        setupGattServer()
-                    }
+                   BluetoothAdapter.STATE_ON -> {
+    Log.d(TAG, "Bluetooth ON -> GATT yeniden kuruluyor")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "BLUETOOTH_CONNECT not granted on STATE_ON")
+            return@post
+        }
+    }
+    setupGattServer()
+}
                 }
             }
         }
     }
     //---------------------------------------------------------------------------
-    override fun onCreate()
-    {
-        super.onCreate()
+override fun onCreate() {
+    super.onCreate()
+    Log.d(TAG, "on create")
+    startMyForegroundService()
+    bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+    bluetoothAdapter = bluetoothManager?.adapter
+    val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
+    registerReceiver(btReceiver, filter)
 
-        Log.d(TAG, "on create")
-
-        startMyForegroundService()
-
-        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-
-        bluetoothAdapter = bluetoothManager?.adapter
-
-        val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
-        registerReceiver(btReceiver, filter)
-
-        if (bluetoothAdapter?.isEnabled == true)
-        {
-            setupGattServer()
-        }
-        else
-        {
-            __SendBleStatusMessage("") // Bluetooth kapalı
+    // ── ADD THIS CHECK ──
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "BLUETOOTH_CONNECT not granted, skipping GATT setup")
+            __SendBleStatusMessage("")
+            return
         }
     }
+    // ── END CHECK ──
+
+    if (bluetoothAdapter?.isEnabled == true) {
+        setupGattServer()
+    } else {
+        __SendBleStatusMessage("")
+    }
+}
     //---------------------------------------------------------------------------
     override fun onDestroy()
     {

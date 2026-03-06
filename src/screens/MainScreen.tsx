@@ -8,12 +8,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   DeviceEventEmitter,
+  NativeModules,
   AppState,
   Alert,
   ScrollView,
   ActivityIndicator,
   Linking,
   Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
@@ -24,6 +26,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../navigation/AppNavigator';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import BleManager from 'react-native-ble-manager';
 import {
   getCardData,
   fetchFromServer,
@@ -32,7 +35,6 @@ import {
 } from '../services/CardStore';
 import {
   subscribeBleStatus,
-  getBleStatus,
   startBlePeripheral,
 } from '../services/BlePeripheralService';
 import {checkNfcEnabled} from '../utils/NfcHelper';
@@ -83,6 +85,7 @@ export default function MainScreen() {
   const [bleMsg, setBleMsg] = useState('');
   const [renewing, setRenewing] = useState(false);
   const [qrLevel, setQrLevel] = useState<'L' | 'M' | 'Q' | 'H'>('L');
+  const [serverConnected, setServerConnected] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -94,9 +97,21 @@ export default function MainScreen() {
       ({enabled}) => setRenewing(!enabled),
     );
     const bleSub = subscribeBleStatus((_st, msg) => {
-      setBleOn(_st === 'advertising' || _st === 'connected');
       setBleMsg(msg);
     });
+    const bleEmitter = new (require('react-native').NativeEventEmitter)(
+      NativeModules.BleManager,
+    );
+    const btStateSub = bleEmitter.addListener(
+      'BleManagerDidUpdateState',
+      ({state}: {state: string}) => {
+        setBleOn(state === 'on');
+      },
+    );
+    const nfcStateSub = DeviceEventEmitter.addListener(
+      'NFC_STATE_CHANGED',
+      (enabled: boolean) => setNfcOn(enabled),
+    );
     const appSub = AppState.addEventListener('change', st => {
       if (st === 'active') _refreshStatuses();
     });
@@ -104,6 +119,8 @@ export default function MainScreen() {
       cardSub.remove();
       renewSub.remove();
       bleSub();
+      btStateSub.remove();
+      nfcStateSub.remove();
       appSub.remove();
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -117,24 +134,45 @@ export default function MainScreen() {
 
   async function _startup() {
     await getCardData();
-    _refreshStatuses();
     _updateQr();
-    try {
-      await startBlePeripheral();
-    } catch {}
-  }
 
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
+        ]);
+        const allGranted = Object.values(granted).every(
+          v => v === PermissionsAndroid.RESULTS.GRANTED,
+        );
+        if (allGranted) await startBlePeripheral();
+      } catch {}
+    } else {
+      try {
+        await startBlePeripheral();
+      } catch {}
+    }
+
+    _refreshStatuses();
+  }
   async function _refreshStatuses() {
     setNfcOn(await checkNfcEnabled());
-    const {status} = getBleStatus();
-    setBleOn(status === 'advertising' || status === 'connected');
+    try {
+      await BleManager.start({showAlert: false});
+      const state = await BleManager.checkState();
+      setBleOn(state === 'on');
+    } catch {
+      setBleOn(false);
+    }
   }
 
   async function _loadUserInfo() {
     setFullName((await AsyncStorage.getItem('fullName')) ?? '');
-    // Load QR quality setting
     const lvl = (await AsyncStorage.getItem('qr_quality')) ?? 'L';
     setQrLevel(lvl as 'L' | 'M' | 'Q' | 'H');
+    const connected = (await AsyncStorage.getItem('server_connected')) === '1';
+    setServerConnected(connected);
     try {
       const dir = await RNFS.readDir(RNFS.DocumentDirectoryPath);
       const photo = dir.find(f => f.name.startsWith('photo.'));
@@ -177,6 +215,7 @@ export default function MainScreen() {
     if (remain <= 0) {
       setCountdown(0);
       setQrPayload(null);
+      _onRenew(true);
       return;
     }
     setCountdown(remain);
@@ -186,20 +225,26 @@ export default function MainScreen() {
         clearInterval(timerRef.current!);
         setCountdown(0);
         setQrPayload(null);
-        setCardCodeVal(0);
+        _onRenew(true);
       } else {
         setCountdown(r);
       }
     }, 1000);
   }
 
-  async function _onRenew() {
+  async function _onRenew(silent = false) {
     if (updateInProgress || renewing) return;
     setRenewing(true);
-    if (!(await fetchFromServer()))
-      Alert.alert('Hata', 'Sunucudan güncellenemedi');
-    await _updateQr();
-    setRenewing(false);
+    try {
+      const timeout = new Promise<boolean>(resolve =>
+        setTimeout(() => resolve(false), 10000),
+      );
+      const ok = await Promise.race([fetchFromServer(), timeout]);
+      if (!ok && !silent) Alert.alert('Hata', 'Sunucudan güncellenemedi');
+      await _updateQr();
+    } finally {
+      setRenewing(false);
+    }
   }
 
   function fmt(sec: number) {
@@ -212,6 +257,89 @@ export default function MainScreen() {
 
   const urgent =
     typeof countdown === 'number' && countdown < 30 && countdown > 0;
+
+  const loggedIn = !!fullName;
+
+  // ── Setup screen — shown until server connected AND account exists ──
+  if (!serverConnected || !loggedIn) {
+    return (
+      <View style={[s.root, s.setupRoot]}>
+        <View
+          style={[
+            s.setupCard,
+            {marginTop: insets.top + 40, marginBottom: insets.bottom + 40},
+          ]}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={s.setupLogo}
+            resizeMode="contain"
+          />
+
+          <View style={s.setupSteps}>
+            {/* Step 1 */}
+            <View style={s.setupStep}>
+              <View
+                style={[s.setupStepNum, serverConnected && s.setupStepDone]}>
+                {serverConnected ? (
+                  <Icon name="check" size={16} color="#fff" />
+                ) : (
+                  <Text style={s.setupStepNumTxt}>1</Text>
+                )}
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={s.setupStepTitle}>Sunucuya bağlan</Text>
+                <Text style={s.setupStepSub}>
+                  {serverConnected
+                    ? 'Bağlantı kuruldu'
+                    : 'Ayarlardan sunucu IP ve portunu gir'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={s.setupStepLine} />
+
+            {/* Step 2 */}
+            <View style={s.setupStep}>
+              <View
+                style={[
+                  s.setupStepNum,
+                  serverConnected && loggedIn && s.setupStepDone,
+                ]}>
+                {serverConnected && loggedIn ? (
+                  <Icon name="check" size={16} color="#fff" />
+                ) : (
+                  <Text style={s.setupStepNumTxt}>2</Text>
+                )}
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={s.setupStepTitle}>Hesap oluştur / giriş yap</Text>
+                <Text style={s.setupStepSub}>
+                  {!serverConnected
+                    ? 'Önce sunucuya bağlan'
+                    : loggedIn
+                    ? 'Hesap doğrulandı'
+                    : 'Ayarlardan hesabına giriş yap'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={s.setupBtn}
+            onPress={() => navigation.navigate('Setup')}
+            activeOpacity={0.85}>
+            <Icon
+              name="cog-outline"
+              size={18}
+              color="#fff"
+              style={{marginRight: 8}}
+            />
+            <Text style={s.setupBtnTxt}>Ayarlara git</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -343,7 +471,7 @@ export default function MainScreen() {
             {countdown !== null && countdown < 0xffffffff && (
               <View style={[s.timerBadge, urgent && s.timerBadgeUrgent]}>
                 <Icon
-                  name={urgent ? 'timer-alert-outline' : 'timer-outline'}
+                  name={urgent ? 'timer-off-outline' : 'timer-outline'}
                   size={14}
                   color={urgent ? C.red : C.textSub}
                 />
@@ -364,7 +492,7 @@ export default function MainScreen() {
       </View>
 
       {/* ── Renew button ── */}
-      {cardCodeVal !== 0 && (
+      {serverConnected && (
         <TouchableOpacity
           style={[s.renewBtn, renewing && {opacity: 0.6}]}
           onPress={_onRenew}
@@ -506,4 +634,57 @@ const s = StyleSheet.create({
     elevation: 6,
   },
   renewTxt: {color: '#fff', fontSize: 15, fontWeight: '700'},
+
+  // Setup screen
+  setupRoot: {justifyContent: 'center', alignItems: 'center', flex: 1},
+  setupCard: {
+    width: '88%',
+    backgroundColor: C.card,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    ...SHADOW_MD,
+  },
+  setupLogo: {height: 38, width: 150, marginBottom: 32},
+  setupSteps: {width: '100%', marginBottom: 28},
+  setupStep: {flexDirection: 'row', alignItems: 'flex-start', gap: 14},
+  setupStepLine: {
+    width: 2,
+    height: 20,
+    backgroundColor: C.border,
+    marginLeft: 17,
+    marginVertical: 4,
+  },
+  setupStepNum: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: C.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  setupStepDone: {backgroundColor: C.green},
+  setupStepNumTxt: {fontSize: 15, fontWeight: '800', color: C.textSub},
+  setupStepTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.text,
+    marginBottom: 2,
+  },
+  setupStepSub: {fontSize: 12, color: C.textMuted, lineHeight: 17},
+  setupBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.blue,
+    borderRadius: 14,
+    paddingVertical: 15,
+    shadowColor: C.blue,
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 3},
+    elevation: 5,
+  },
+  setupBtnTxt: {color: '#fff', fontSize: 15, fontWeight: '700'},
 });

@@ -72,3 +72,4 @@ coverage/
 *.swp
 *.swo
 package-lock.json
+src/assets/

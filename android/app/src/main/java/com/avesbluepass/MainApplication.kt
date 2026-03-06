@@ -19,6 +19,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Register our native BLE service bridge
               add(BleServicePackage())
+              add(NfcStatusPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

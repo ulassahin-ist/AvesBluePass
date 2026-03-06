@@ -75,16 +75,22 @@ export default function SettingsScreen() {
       setQrLevel(
         ((await AsyncStorage.getItem('qr_quality')) ?? 'L') as QrLevel,
       );
+      // Restore connected state so delete/update buttons survive remounts
+      const connected =
+        (await AsyncStorage.getItem('server_connected')) === '1';
+      setServerConnected(connected);
     })();
   }, []);
 
   const onIpChange = (v: string) => {
     setServerIp(v);
     setServerConnected(false);
+    AsyncStorage.setItem('server_connected', '0');
   };
   const onPortChange = (v: string) => {
     setServerPort(v);
     setServerConnected(false);
+    AsyncStorage.setItem('server_connected', '0');
   };
 
   const _connect = useCallback(async () => {
@@ -107,9 +113,11 @@ export default function SettingsScreen() {
     setConnecting(false);
     if (res.success) {
       setServerConnected(true);
+      await AsyncStorage.setItem('server_connected', '1');
       Alert.alert('Başarılı', 'Sunucuya bağlanıldı');
     } else {
       setServerConnected(false);
+      await AsyncStorage.setItem('server_connected', '0');
       Alert.alert('Hata', res.errorMessage ?? 'Bağlantı başarısız');
     }
   }, [serverIp, serverPort]);
@@ -212,7 +220,7 @@ export default function SettingsScreen() {
         <View style={s.divider} />
         <View style={s.inputRow}>
           <Icon
-            name="router-network-outline"
+            name="router-network"
             size={18}
             color={C.textMuted}
             style={s.inputIcon}
